@@ -5,7 +5,10 @@
     },
     "dependencies": {
         "@coral-xyz/anchor": "^0.29.0",
-        "solana-bankrun": "^0.3.1"
+        "@solana/spl-token": "^0.4.8",
+        "anchor-bankrun": "0.3.0",
+        "solana-bankrun": "^0.3.1",
+        "spl-token-bankrun": "^0.2.6"
     },
     "devDependencies": {
         "@types/bn.js": "^5.1.0",
