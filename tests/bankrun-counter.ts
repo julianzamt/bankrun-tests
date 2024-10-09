@@ -10,16 +10,16 @@ import { BankrunCounter } from "../target/types/bankrun_counter";
 import { expect } from "chai";
 import {
   getAssociatedTokenAddress,
-  unpackAccount,
   ASSOCIATED_TOKEN_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
-
 import {
   createMint,
   createAssociatedTokenAccount,
   mintTo,
+  transfer,
 } from "spl-token-bankrun";
+import * as helpers from "./helpers";
 
 describe("bankrun-counter", () => {
   const BCMintInitialSupply = 100;
@@ -35,9 +35,10 @@ describe("bankrun-counter", () => {
   let BCMint: anchor.web3.PublicKey;
   let pdaAuth: anchor.web3.PublicKey;
   let pdaAuthAta: anchor.web3.PublicKey;
-  let receiverAta: anchor.web3.PublicKey;
+  let providerWalletAta: anchor.web3.PublicKey;
 
-  let simpleTransferReceiver = anchor.web3.Keypair.generate();
+  let anotherReceiver = anchor.web3.Keypair.generate();
+  let anotherReceiverAta: anchor.web3.PublicKey;
 
   let now: number;
 
@@ -76,9 +77,16 @@ describe("bankrun-counter", () => {
       pdaAuth
     );
 
-    receiverAta = await getAssociatedTokenAddress(
+    providerWalletAta = await getAssociatedTokenAddress(
       BCMint,
       provider.wallet.publicKey
+    );
+
+    anotherReceiverAta = await createAssociatedTokenAccount(
+      banksClient,
+      provider.wallet.payer,
+      BCMint,
+      anotherReceiver.publicKey
     );
 
     // console.log("walet: ", provider.wallet.publicKey.toString());
@@ -93,28 +101,22 @@ describe("bankrun-counter", () => {
       BCMintInitialSupply
     );
 
-    let packedAccount = await banksClient.getAccount(pdaAuthAta);
-
-    let packedAccountBuffer: anchor.web3.AccountInfo<Buffer> = {
-      ...packedAccount,
-      data: Buffer.from(packedAccount.data),
-    };
-
-    let unpackedAccount = await unpackAccount(pdaAuthAta, packedAccountBuffer);
-
-    // console.log(unpackedAccount);
+    let unpackedAccount = await helpers.getTokenAccountInfoBR(
+      banksClient,
+      pdaAuthAta
+    );
 
     expect(Number(unpackedAccount.amount)).to.eq(BCMintInitialSupply);
 
     now = Math.round(Date.now() / 1000);
   });
 
-  it("simple transfer", async () => {
+  it("Sol transfer", async () => {
     const transferLamports = BigInt(100 * anchor.web3.LAMPORTS_PER_SOL);
     const ixs = [
       anchor.web3.SystemProgram.transfer({
         fromPubkey: provider.wallet.publicKey,
-        toPubkey: simpleTransferReceiver.publicKey,
+        toPubkey: anotherReceiver.publicKey,
         lamports: transferLamports,
       }),
     ];
@@ -125,7 +127,7 @@ describe("bankrun-counter", () => {
     tx.sign(provider.wallet.payer);
     await banksClient.processTransaction(tx);
     const balanceAfter = await banksClient.getBalance(
-      simpleTransferReceiver.publicKey
+      anotherReceiver.publicKey
     );
     expect(balanceAfter).to.eq(transferLamports);
   });
@@ -190,7 +192,7 @@ describe("bankrun-counter", () => {
     expect(counter.counter.toString()).to.eq("2");
   });
 
-  it("Can transfer tokens", async () => {
+  it("Can execute transferOnetoken", async () => {
     await program.methods
       .transferOneToken()
       .accounts({
@@ -199,25 +201,21 @@ describe("bankrun-counter", () => {
         pdaAuth,
         pdaAuthAta,
         receiver: provider.wallet.publicKey,
-        receiverAta,
+        receiverAta: providerWalletAta,
         systemProgram: anchor.web3.SystemProgram.programId,
         tokenProgram: TOKEN_PROGRAM_ID,
       })
       .rpc();
 
-    let packedAccount = await banksClient.getAccount(receiverAta);
-
-    let packedAccountBuffer: anchor.web3.AccountInfo<Buffer> = {
-      ...packedAccount,
-      data: Buffer.from(packedAccount.data),
-    };
-
-    let unpackedAccount = await unpackAccount(receiverAta, packedAccountBuffer);
+    let unpackedAccount = await helpers.getTokenAccountInfoBR(
+      banksClient,
+      providerWalletAta
+    );
 
     expect(Number(unpackedAccount.amount)).to.eq(1);
   });
 
-  it("Cannot transfer until 5 minutes after the last tx", async () => {
+  it("Cannot transferOnetoken until 5 minutes after the last tx", async () => {
     let tx = new anchor.web3.Transaction().add(
       await program.methods
         .transferOneToken()
@@ -227,7 +225,7 @@ describe("bankrun-counter", () => {
           pdaAuth,
           pdaAuthAta,
           receiver: provider.wallet.publicKey,
-          receiverAta,
+          receiverAta: providerWalletAta,
           systemProgram: anchor.web3.SystemProgram.programId,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
@@ -246,7 +244,7 @@ describe("bankrun-counter", () => {
       .true;
   });
 
-  it("Can transfer again after 5 minutes - Bankrun forwards time", async () => {
+  it("Can transferOnetoken again after 5 minutes - Bankrun forwards time", async () => {
     now += 6 * 60;
 
     const currentClock = await context.banksClient.getClock();
@@ -268,21 +266,35 @@ describe("bankrun-counter", () => {
         pdaAuth,
         pdaAuthAta,
         receiver: provider.wallet.publicKey,
-        receiverAta,
+        receiverAta: providerWalletAta,
         systemProgram: anchor.web3.SystemProgram.programId,
         tokenProgram: TOKEN_PROGRAM_ID,
       })
       .rpc();
 
-    let packedAccount = await banksClient.getAccount(receiverAta);
-
-    let packedAccountBuffer: anchor.web3.AccountInfo<Buffer> = {
-      ...packedAccount,
-      data: Buffer.from(packedAccount.data),
-    };
-
-    let unpackedAccount = await unpackAccount(receiverAta, packedAccountBuffer);
+    let unpackedAccount = await helpers.getTokenAccountInfoBR(
+      banksClient,
+      providerWalletAta
+    );
 
     expect(Number(unpackedAccount.amount)).to.eq(2);
+  });
+
+  it("Can transfer tokens beetween accounts", async () => {
+    await transfer(
+      banksClient,
+      provider.wallet.payer,
+      providerWalletAta,
+      anotherReceiverAta,
+      provider.wallet.publicKey,
+      1
+    );
+
+    let unpackedAccount = await helpers.getTokenAccountInfoBR(
+      banksClient,
+      anotherReceiverAta
+    );
+
+    expect(Number(unpackedAccount.amount)).to.eq(1);
   });
 });
