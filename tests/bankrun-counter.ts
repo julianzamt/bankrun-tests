@@ -37,6 +37,8 @@ describe("bankrun-counter", () => {
   let pdaAuthAta: anchor.web3.PublicKey;
   let receiverAta: anchor.web3.PublicKey;
 
+  let simpleTransferReceiver = anchor.web3.Keypair.generate();
+
   let now: number;
 
   before(async () => {
@@ -100,11 +102,32 @@ describe("bankrun-counter", () => {
 
     let unpackedAccount = await unpackAccount(pdaAuthAta, packedAccountBuffer);
 
-    console.log(unpackedAccount);
+    // console.log(unpackedAccount);
 
     expect(Number(unpackedAccount.amount)).to.eq(BCMintInitialSupply);
 
     now = Math.round(Date.now() / 1000);
+  });
+
+  it("simple transfer", async () => {
+    const transferLamports = BigInt(100 * anchor.web3.LAMPORTS_PER_SOL);
+    const ixs = [
+      anchor.web3.SystemProgram.transfer({
+        fromPubkey: provider.wallet.publicKey,
+        toPubkey: simpleTransferReceiver.publicKey,
+        lamports: transferLamports,
+      }),
+    ];
+
+    const tx = new anchor.web3.Transaction();
+    [tx.recentBlockhash] = await banksClient.getLatestBlockhash();
+    tx.add(...ixs);
+    tx.sign(provider.wallet.payer);
+    await banksClient.processTransaction(tx);
+    const balanceAfter = await banksClient.getBalance(
+      simpleTransferReceiver.publicKey
+    );
+    expect(balanceAfter).to.eq(transferLamports);
   });
 
   it("Add one", async () => {
