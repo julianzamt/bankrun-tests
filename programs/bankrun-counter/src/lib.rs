@@ -5,7 +5,7 @@ pub mod errors;
 
 use crate::errors::ErrorCode;
 
-declare_id!("65sUaBRwnyJfhdd5gA3wJWZicfeGqe7RXvRY5Bg1hhJt");
+declare_id!("BTowJtegiE7st2TGyHjYYuqmuF63XZNyUqU8fBJnefbc");
 
 #[program]
 pub mod bankrun_counter {

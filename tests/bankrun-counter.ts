@@ -31,6 +31,7 @@ describe("bankrun-counter", () => {
   let banksClient: BanksClient;
 
   let counterAddress: anchor.web3.PublicKey;
+  let anotherReceiverCounterAddress: anchor.web3.PublicKey;
 
   let BCMint: anchor.web3.PublicKey;
   let pdaAuth: anchor.web3.PublicKey;
@@ -56,6 +57,12 @@ describe("bankrun-counter", () => {
       [Buffer.from("counter"), provider.wallet.publicKey.toBuffer()],
       program.programId
     );
+
+    [anotherReceiverCounterAddress] =
+      anchor.web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("counter"), anotherReceiver.publicKey.toBuffer()],
+        program.programId
+      );
 
     [pdaAuth] = anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("pda_auth")],
@@ -111,7 +118,7 @@ describe("bankrun-counter", () => {
     now = Math.round(Date.now() / 1000);
   });
 
-  it("Sol transfer", async () => {
+  it("Sol transfer to anotherReceiver", async () => {
     const transferLamports = BigInt(100 * anchor.web3.LAMPORTS_PER_SOL);
     const ixs = [
       anchor.web3.SystemProgram.transfer({
@@ -130,6 +137,21 @@ describe("bankrun-counter", () => {
       anotherReceiver.publicKey
     );
     expect(balanceAfter).to.eq(transferLamports);
+  });
+
+  it("Now that it is funded, anotherReceiver can sign a tx", async () => {
+    await program.methods
+      .addOne()
+      .accounts({
+        counter: anotherReceiverCounterAddress,
+        owner: anotherReceiver.publicKey,
+      })
+      .signers([anotherReceiver])
+      .rpc();
+
+    let counter = await program.account.counter.fetch(anotherReceiverCounterAddress);
+
+    expect(counter.counter.toString()).to.eq("1");
   });
 
   it("Add one", async () => {
