@@ -133,6 +133,7 @@ describe("bankrun-counter", () => {
     tx.add(...ixs);
     tx.sign(provider.wallet.payer);
     await banksClient.processTransaction(tx);
+    // await banksClient.sendTransaction(tx);
     const balanceAfter = await banksClient.getBalance(
       anotherReceiver.publicKey
     );
@@ -140,6 +141,10 @@ describe("bankrun-counter", () => {
   });
 
   it("Now that it is funded, anotherReceiver can sign a tx", async () => {
+    // IMPORTANT: Although in this example works fine, combining the provider's rpc() method with the banksClient.processTransaction()
+    // (Like here, funding the signer account with it in the previous test) has known issues. A better approach seems to be executing
+    // the program tx with the banksClient method as well.
+
     await program.methods
       .addOne()
       .accounts({
@@ -149,7 +154,25 @@ describe("bankrun-counter", () => {
       .signers([anotherReceiver])
       .rpc();
 
-    let counter = await program.account.counter.fetch(anotherReceiverCounterAddress);
+    // Alternative execution approach:
+    // const tx = new anchor.web3.Transaction();
+    // [tx.recentBlockhash] = await banksClient.getLatestBlockhash();
+
+    // let ix = await program.methods
+    //   .addOne()
+    //   .accounts({
+    //     counter: anotherReceiverCounterAddress,
+    //     owner: anotherReceiver.publicKey,
+    //   })
+    //   .instruction();
+
+    // tx.add(ix);
+    // tx.sign(anotherReceiver);
+    // await banksClient.processTransaction(tx);
+
+    let counter = await program.account.counter.fetch(
+      anotherReceiverCounterAddress
+    );
 
     expect(counter.counter.toString()).to.eq("1");
   });
@@ -229,12 +252,12 @@ describe("bankrun-counter", () => {
       })
       .rpc();
 
-    let unpackedAccount = await helpers.getTokenAccountInfoBR(
+    let tokenAccountInfo = await helpers.getTokenAccountInfoBR(
       banksClient,
       providerWalletAta
     );
 
-    expect(Number(unpackedAccount.amount)).to.eq(1);
+    expect(Number(tokenAccountInfo.amount)).to.eq(1);
   });
 
   it("Cannot transferOnetoken until 5 minutes after the last tx", async () => {
@@ -294,12 +317,12 @@ describe("bankrun-counter", () => {
       })
       .rpc();
 
-    let unpackedAccount = await helpers.getTokenAccountInfoBR(
+    let tokenAccountInfo = await helpers.getTokenAccountInfoBR(
       banksClient,
       providerWalletAta
     );
 
-    expect(Number(unpackedAccount.amount)).to.eq(2);
+    expect(Number(tokenAccountInfo.amount)).to.eq(2);
   });
 
   it("Can transfer tokens beetween accounts", async () => {
@@ -312,11 +335,11 @@ describe("bankrun-counter", () => {
       1
     );
 
-    let unpackedAccount = await helpers.getTokenAccountInfoBR(
+    let tokenAccountInfo = await helpers.getTokenAccountInfoBR(
       banksClient,
       anotherReceiverAta
     );
 
-    expect(Number(unpackedAccount.amount)).to.eq(1);
+    expect(Number(tokenAccountInfo.amount)).to.eq(1);
   });
 });
